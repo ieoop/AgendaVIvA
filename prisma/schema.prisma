@@ -1,0 +1,590 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Country {
+  ES
+  AR
+  OTHER
+}
+
+enum Role {
+  owner
+  admin
+  staff
+  viewer
+}
+
+enum AppointmentStatus {
+  pending
+  confirmed
+  paid
+  completed
+  cancelled
+  no_show
+  rescheduled
+}
+
+enum PaymentStatus {
+  none
+  pending
+  paid
+  refunded
+  failed
+}
+
+enum AppointmentSource {
+  public_page
+  ai_chat
+  manual
+  whatsapp
+  instagram
+  admin
+}
+
+enum ConversationChannel {
+  web
+  whatsapp
+  instagram
+  email
+  manual
+}
+
+enum MessageSender {
+  customer
+  ai
+  staff
+  system
+}
+
+enum SubscriptionStatus {
+  trialing
+  active
+  past_due
+  cancelled
+  paused
+}
+
+enum ProviderName {
+  stripe
+  mercado_pago
+  redsys
+  manual_transfer
+  demo
+}
+
+model User {
+  id            String       @id @default(cuid())
+  name          String?
+  email         String       @unique
+  emailVerified DateTime?
+  image         String?
+  passwordHash  String?
+  isSuperAdmin  Boolean      @default(false)
+  status        String       @default("active")
+  memberships   Membership[]
+  accounts      Account[]
+  sessions      Session[]
+  auditLogs     AuditLog[]
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model Organization {
+  id               String               @id @default(cuid())
+  name             String
+  slug             String               @unique
+  country          Country
+  locale           String
+  currency         String
+  timezone         String
+  industry         String
+  subscriptionPlan String               @default("trial")
+  trialEndsAt      DateTime
+  status           String               @default("trialing")
+  memberships      Membership[]
+  invites          Invite[]
+  profile          BusinessProfile?
+  locations        Location[]
+  services         Service[]
+  staffProfiles    StaffProfile[]
+  customers        Customer[]
+  appointments     Appointment[]
+  payments         Payment[]
+  paymentConfigs   PaymentProviderConfig[]
+  subscription     Subscription?
+  conversations    Conversation[]
+  automations      Automation[]
+  campaigns        Campaign[]
+  reviewRequests   ReviewRequest[]
+  reviews          Review[]
+  emailLogs        EmailLog[]
+  whatsAppLogs     WhatsAppLog[]
+  auditLogs        AuditLog[]
+  referrals        Referral[]
+  featureFlags     FeatureFlag[]
+  apiKeys          ApiKey[]
+  webhookEvents    WebhookEvent[]
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+}
+
+model Membership {
+  id             String       @id @default(cuid())
+  userId         String
+  organizationId String
+  role           Role
+  active         Boolean      @default(true)
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdAt      DateTime     @default(now())
+
+  @@unique([userId, organizationId])
+  @@index([organizationId, role])
+}
+
+model Invite {
+  id             String       @id @default(cuid())
+  organizationId String
+  email          String
+  role           Role
+  token          String       @unique
+  expiresAt      DateTime
+  acceptedAt     DateTime?
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdAt      DateTime     @default(now())
+}
+
+model BusinessProfile {
+  id             String       @id @default(cuid())
+  organizationId String       @unique
+  displayName    String
+  tagline        String
+  description    String       @db.Text
+  logoUrl        String?
+  coverUrl       String?
+  address        String
+  city           String
+  phone          String?
+  whatsapp       String?
+  instagram      String?
+  assistantName  String       @default("Alma")
+  assistantTone  String       @default("cercano")
+  assistantGoal  String       @default("maximizar reservas")
+  aiConfig       Json
+  legalNotice    String?      @db.Text
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
+
+model Location {
+  id             String       @id @default(cuid())
+  organizationId String
+  name           String
+  address        String
+  timezone       String
+  active         Boolean      @default(true)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  staff          StaffProfile[]
+  appointments   Appointment[]
+}
+
+model Service {
+  id                  String        @id @default(cuid())
+  organizationId      String
+  name                String
+  description         String        @db.Text
+  durationMinutes     Int
+  priceCents          Int
+  requiresDeposit     Boolean       @default(false)
+  depositType         String        @default("fixed")
+  depositValueCents   Int?
+  depositPercent      Int?
+  bufferBeforeMinutes Int           @default(0)
+  bufferAfterMinutes  Int           @default(0)
+  color               String        @default("#0f766e")
+  category            String
+  active              Boolean       @default(true)
+  organization        Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  staff               StaffService[]
+  appointments        Appointment[]
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+
+  @@index([organizationId, active])
+}
+
+model StaffProfile {
+  id             String             @id @default(cuid())
+  organizationId String
+  locationId     String?
+  userId         String?
+  name           String
+  title          String
+  avatarUrl      String?
+  active         Boolean            @default(true)
+  organization   Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  location       Location?          @relation(fields: [locationId], references: [id])
+  services       StaffService[]
+  rules          AvailabilityRule[]
+  appointments   Appointment[]
+}
+
+model StaffService {
+  staffId   String
+  serviceId String
+  staff     StaffProfile @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  service   Service      @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@id([staffId, serviceId])
+}
+
+model AvailabilityRule {
+  id             String       @id @default(cuid())
+  organizationId String
+  staffId        String?
+  dayOfWeek      Int
+  startTime      String
+  endTime        String
+  capacity       Int          @default(1)
+  active         Boolean      @default(true)
+  staff          StaffProfile? @relation(fields: [staffId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, dayOfWeek])
+}
+
+model AvailabilityException {
+  id             String   @id @default(cuid())
+  organizationId String
+  staffId        String?
+  date           DateTime
+  startTime      String?
+  endTime        String?
+  closed         Boolean  @default(false)
+  reason         String?
+
+  @@index([organizationId, date])
+}
+
+model Customer {
+  id                String        @id @default(cuid())
+  organizationId    String
+  name              String
+  phone             String?
+  email             String?
+  country           Country
+  tags              String[]
+  lastVisitAt       DateTime?
+  totalAppointments Int           @default(0)
+  totalSpentCents   Int           @default(0)
+  noShowCount       Int           @default(0)
+  source            String        @default("public_page")
+  consentMarketing  Boolean       @default(false)
+  notes             String?       @db.Text
+  organization      Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  appointments      Appointment[]
+  conversations     Conversation[]
+  reviews           Review[]
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  @@index([organizationId, email])
+  @@index([organizationId, phone])
+}
+
+model Appointment {
+  id              String            @id @default(cuid())
+  organizationId  String
+  customerId      String
+  serviceId       String
+  staffId         String?
+  locationId      String?
+  startAt         DateTime
+  endAt           DateTime
+  status          AppointmentStatus @default(pending)
+  paymentStatus   PaymentStatus     @default(none)
+  source          AppointmentSource @default(public_page)
+  notes           String?           @db.Text
+  internalNotes   String?           @db.Text
+  cancelToken     String            @unique
+  rescheduleToken String            @unique
+  organization    Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  customer        Customer          @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  service         Service           @relation(fields: [serviceId], references: [id])
+  staff           StaffProfile?     @relation(fields: [staffId], references: [id])
+  location        Location?         @relation(fields: [locationId], references: [id])
+  payments        Payment[]
+  reviewRequests  ReviewRequest[]
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  @@index([organizationId, startAt])
+  @@index([organizationId, status])
+}
+
+model Payment {
+  id             String        @id @default(cuid())
+  organizationId String
+  appointmentId  String?
+  provider       ProviderName
+  kind           String
+  amountCents    Int
+  currency       String
+  status         PaymentStatus @default(pending)
+  externalId     String?
+  checkoutUrl    String?
+  metadata       Json?
+  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  appointment    Appointment?  @relation(fields: [appointmentId], references: [id])
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@index([organizationId, status])
+}
+
+model PaymentProviderConfig {
+  id             String       @id @default(cuid())
+  organizationId String
+  provider       ProviderName
+  enabled        Boolean      @default(false)
+  mode           String       @default("demo")
+  status         String       @default("requires_configuration")
+  publicConfig   Json?
+  encryptedConfig String?
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, provider])
+}
+
+model Subscription {
+  id             String             @id @default(cuid())
+  organizationId String             @unique
+  planId         String?
+  provider       ProviderName       @default(demo)
+  status         SubscriptionStatus @default(trialing)
+  currentPeriodEnd DateTime?
+  externalId     String?
+  organization   Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  plan           Plan?              @relation(fields: [planId], references: [id])
+}
+
+model Plan {
+  id           String         @id @default(cuid())
+  name         String
+  country      Country
+  currency     String
+  monthlyPrice Int
+  yearlyPrice  Int
+  limits       Json
+  features     String[]
+  subscriptions Subscription[]
+
+  @@unique([name, country])
+}
+
+model Conversation {
+  id             String              @id @default(cuid())
+  organizationId String
+  customerId     String?
+  channel        ConversationChannel
+  assignedToId   String?
+  status         String              @default("open")
+  lastMessageAt  DateTime            @default(now())
+  aiEnabled      Boolean             @default(true)
+  summary        String              @db.Text
+  organization   Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  customer       Customer?           @relation(fields: [customerId], references: [id])
+  messages       Message[]
+}
+
+model Message {
+  id             String        @id @default(cuid())
+  conversationId String
+  sender         MessageSender
+  body           String        @db.Text
+  metadata       Json?
+  conversation   Conversation  @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  createdAt      DateTime      @default(now())
+}
+
+model Automation {
+  id             String          @id @default(cuid())
+  organizationId String
+  name           String
+  trigger        String
+  actions        Json
+  active         Boolean         @default(true)
+  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  runs           AutomationRun[]
+}
+
+model AutomationRun {
+  id           String     @id @default(cuid())
+  automationId String
+  status       String
+  payload      Json?
+  automation   Automation @relation(fields: [automationId], references: [id], onDelete: Cascade)
+  createdAt    DateTime   @default(now())
+}
+
+model Campaign {
+  id             String              @id @default(cuid())
+  organizationId String
+  name           String
+  segment        Json
+  channel        String
+  status         String              @default("draft")
+  metrics        Json
+  organization   Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  recipients     CampaignRecipient[]
+  createdAt      DateTime            @default(now())
+}
+
+model CampaignRecipient {
+  id         String   @id @default(cuid())
+  campaignId String
+  customerId String
+  status     String
+  campaign   Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+}
+
+model ReviewRequest {
+  id             String       @id @default(cuid())
+  organizationId String
+  appointmentId  String
+  token          String       @unique
+  status         String       @default("sent")
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  appointment    Appointment  @relation(fields: [appointmentId], references: [id])
+  createdAt      DateTime     @default(now())
+}
+
+model Review {
+  id             String       @id @default(cuid())
+  organizationId String
+  customerId     String?
+  rating         Int
+  publicText     String?      @db.Text
+  privateText    String?      @db.Text
+  source         String       @default("agendaviva")
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  customer       Customer?    @relation(fields: [customerId], references: [id])
+  createdAt      DateTime     @default(now())
+}
+
+model EmailLog {
+  id             String       @id @default(cuid())
+  organizationId String?
+  to             String
+  subject        String
+  html           String       @db.Text
+  provider       String       @default("demo")
+  status         String       @default("stored")
+  metadata       Json?
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  createdAt      DateTime     @default(now())
+}
+
+model WhatsAppLog {
+  id             String       @id @default(cuid())
+  organizationId String?
+  direction      String
+  body           String       @db.Text
+  status         String
+  metadata       Json?
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  createdAt      DateTime     @default(now())
+}
+
+model AuditLog {
+  id             String       @id @default(cuid())
+  organizationId String?
+  userId         String?
+  action         String
+  entity         String
+  entityId       String?
+  metadata       Json?
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  user           User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+  createdAt      DateTime      @default(now())
+}
+
+model Referral {
+  id             String       @id @default(cuid())
+  organizationId String
+  code           String       @unique
+  referredEmail  String?
+  rewardStatus   String       @default("pending")
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
+
+model FeatureFlag {
+  id             String       @id @default(cuid())
+  organizationId String?
+  key            String
+  enabled        Boolean      @default(true)
+  rollout        Int          @default(100)
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, key])
+}
+
+model ApiKey {
+  id             String       @id @default(cuid())
+  organizationId String
+  name           String
+  hashedKey      String
+  lastUsedAt     DateTime?
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
+
+model WebhookEvent {
+  id             String       @id @default(cuid())
+  organizationId String?
+  provider       ProviderName
+  externalId     String?
+  eventType      String
+  payload        Json
+  processedAt    DateTime?
+  status         String       @default("received")
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  createdAt      DateTime     @default(now())
+}
