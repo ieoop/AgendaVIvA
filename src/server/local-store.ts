@@ -1,4 +1,4 @@
-import "server-only";
+﻿import "server-only";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import bcrypt from "bcryptjs";
@@ -223,12 +223,12 @@ async function readDb(): Promise<LocalDb> {
         capacity: 1,
         active: true
       })));
-      await writeDb(db);
+      await safeWriteDb(db);
     }
     return db;
   } catch {
     const db = await defaultDb();
-    await writeDb(db);
+    await safeWriteDb(db);
     return db;
   }
 }
@@ -236,6 +236,15 @@ async function readDb(): Promise<LocalDb> {
 async function writeDb(db: LocalDb) {
   await mkdir(path.dirname(dbPath), { recursive: true });
   await writeFile(dbPath, JSON.stringify(db, null, 2), "utf8");
+}
+
+async function safeWriteDb(db: LocalDb) {
+  try {
+    await writeDb(db);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export async function getLocalDb() {
@@ -312,7 +321,7 @@ export async function createLocalOrganization(input: { email: string; password: 
       active: true
     });
   }
-  await writeDb(db);
+  await safeWriteDb(db);
   return { user, organization: org };
 }
 
@@ -395,7 +404,7 @@ export async function updateLocalAvailabilityRule(input: {
       active: input.active ?? true
     });
   }
-  await writeDb(db);
+  await safeWriteDb(db);
   return db.availabilityRules.filter((rule) => rule.organizationId === input.organizationId);
 }
 
@@ -403,7 +412,7 @@ export async function createLocalService(input: Omit<LocalService, "id" | "activ
   const db = await readDb();
   const service: LocalService = { ...input, id: id("service"), active: true, color: input.color ?? "#0f766e" };
   db.services.push(service);
-  await writeDb(db);
+  await safeWriteDb(db);
   return service;
 }
 
@@ -457,7 +466,7 @@ export async function createLocalBooking(input: { businessSlug: string; serviceI
     status: "stored_local",
     createdAt: new Date().toISOString()
   });
-  await writeDb(db);
+  await safeWriteDb(db);
   return { organization, service, customer, appointment };
 }
 
@@ -473,6 +482,7 @@ export async function updateLocalAppointmentByToken(input: { token: string; acti
     appointment.startAt = next.toISOString();
     appointment.endAt = new Date(next.getTime() + 45 * 60_000).toISOString();
   }
-  await writeDb(db);
+  await safeWriteDb(db);
   return appointment;
 }
+
